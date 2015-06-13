@@ -37,12 +37,18 @@ char intToChar(int i){
 }
 
 void encrypt(char message[], char key[]){
+     //fprintf(stderr,"encrypt(%.100s, %.100s)\n", message, key);
 	  int i;
 	  char n;
-	  for (i=0; message[i] != '\0' ; i++){
+	  for (i=0; message[i] != '\n' ; i++){
+	  		char c = message[i];
 	  		n = (charToInt(message[i]) + charToInt(key[i])) % 27;
+	  			  		//printf("message[i] = %s, key[i] = %s\n", message[i], key[i]),
+	  		//printf("message[%d] = (%d + %d) % 27 = %d\n", i, charToInt(message[i]),
+	  			//charToInt(key[i]), n);
 	  		message[i] = intToChar(n);
 	  }
+	  message[i] = '\0';
 	  return;
 }
 
@@ -51,8 +57,8 @@ int main(int argc, char *argv[])
 
      int sockfd, newsockfd, portno, optval, n, status;
      socklen_t clilen;
-     char buffer[512];
-     char key[512];
+     char buffer[100000];
+     char key[100000];
      struct sockaddr_in serv_addr, cli_addr; //socket addresses
      pid_t pid, sid; //process id 
      
@@ -64,7 +70,7 @@ int main(int argc, char *argv[])
      
      sockfd = socket(AF_INET, SOCK_STREAM, 0); //create the socket
      if (sockfd < 0) 
-        error("ERROR opening socket");
+        error("Server: ERROR opening socket");
      optval = 1;
      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int));
         
@@ -76,7 +82,7 @@ int main(int argc, char *argv[])
      
      if (bind(sockfd, (struct sockaddr *) &serv_addr, 
               sizeof(serv_addr)) < 0) //bind address to socket
-              error("ERROR on binding");
+              error("Encrypt Server: ERROR on binding");
               
      listen(sockfd,5); //wait for client to call
 
@@ -84,14 +90,14 @@ int main(int argc, char *argv[])
 		  clilen = sizeof(cli_addr); 
 		  newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen); //answer call
 		  if (newsockfd < 0){ 
-				 error("ERROR on accept");
+				 error("Server: ERROR on accept");
 		  }
 		  
 		  //fork
 		  pid = fork();
 		  
 		  if (pid < 0){
-				error("ERROR forking process");
+				error("Server: ERROR forking process");
 				exit(EXIT_FAILURE);
 		  } 
 		  
@@ -108,7 +114,7 @@ int main(int argc, char *argv[])
 		  	 //receive authentication message and reply
           read(newsockfd, buffer, sizeof(buffer)-1);
           if (strcmp(buffer, "enc_bs") != 0) {
-                perror("invalid client");
+                //fprintf(stderr,"invalid client\n");
                 //write error back to client
                 char response[]  = "invalid";
                 write(newsockfd, response, sizeof(response));
@@ -134,7 +140,7 @@ int main(int argc, char *argv[])
 					 if(p[i] == '\n'){
 						  numNewLines++;
 						  if (numNewLines == 1){  //first newline signals start of key
-					 	 	 keyStart = p+i;
+					 	 	 keyStart = p+i+1;
 					 	  }
 					 }
 				 }
@@ -146,13 +152,15 @@ int main(int argc, char *argv[])
 				 p += bytes_read;
 				 bytes_remaining -= bytes_read;
 	 		 }
-	 		 char message[512];
+	 		 
+	 		 char message[100000];
 	 		 bzero(message, sizeof(message));
 	 		 
 	 		 strncpy(message, buffer, keyStart-buffer); //separate message and key
-	 		 printf("EServer: message before encryption: %s\n", message);
+			// printf("ESERVER: message before encrypt %.100s\n", message);
+
 	 		 encrypt(message, keyStart); //encrypt message
-	 		 printf("eServer: message after encryption: %s\n", message);
+			//printf("ESERVER: message after encrypt %.100s\n", message);
 	 		 write(newsockfd, message, sizeof(message)); //send encrypted message
 		  }
 		  close(newsockfd);

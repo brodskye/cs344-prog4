@@ -36,43 +36,50 @@ long get_file_length(char *filename) {
     return length;
 }
 
-void sendFile(char *filename, int sockfd){
+
+void sendFile(char *filename, int sockfd, int filelength){
+	//fprintf(stderr, "\n\nsending %s\n", filename);
+	 //fprintf(stderr,"filelength: %d\n", filelength);
+	 
 	 int fd = open(filename, 'r'); //open for readonly file specified in command line
-    char buffer[512];
-    bzero(buffer,512);
-	//printf("Sending file %s\n", filename);
-    while (1){ //read in the file in chunks until the whole file is read
-		 int bytes_read;
+    char buffer[100000];
+    bzero(buffer, sizeof(buffer));
+    int bytes_read, bytes_written;
+	
+    while (filelength > 0){ //read in the file in chunks until the whole file is read
 		 bytes_read = read(fd, buffer, sizeof(buffer));
 		 if (bytes_read == 0){ // We're done reading from the file
 			  break;
 		 }
 		 if (bytes_read < 0) {
 			  // handle errors
-			  error("ERROR reading file");
+			  perror("Client: ERROR reading file");
+			  exit(1);
 		 }
-
-		 void *p; 
+		 filelength -= bytes_read;
+		 //fprintf(stderr,"filelength: %d\n", filelength);
+	 }	 
+		 char *p; 
 		 p = buffer; //keep track of where in buffer we are
-		 int bytes_written;
 		 while (bytes_read > 0) {
 			  bytes_written = write(sockfd, p, bytes_read);
+			  //fprintf(stderr,"bytes_written: %d\n", bytes_written);
+			  //fprintf(stderr,"bytes_read: %d\n", bytes_read);
 			  if (bytes_written < 0) {
 					// handle errors
-					error("ERROR writing to socket");
+					perror("Client: ERROR writing to socket");
+					exit(1);
 			  }
 			  bytes_read -= bytes_written;
 			  p += bytes_written;
 		 }
-	 }
-	 return;
-	 //printf("Client: Here is the message from file %s: %s\n",filename, buffer);
+	  return;
 }
 
 void receiveFile(int sockfd){
 	 int n;
-    char buffer[512];
-    bzero(buffer,512);
+    char buffer[100000];
+    bzero(buffer,100000);
 
     while (1){ //read in the file in chunks until the whole file is read
 		 int bytes_read;
@@ -99,21 +106,22 @@ int main(int argc, char *argv[])
 	 FILE *fp;
 	 const char hostname[] = "localhost";
 	 
-    char buffer[512];
-    bzero(buffer,512);
+    char buffer[100000];
+    bzero(buffer,100000);
     if (argc != 4) {
        fprintf(stderr,"usage %s <inputfile> <key> <port>\n", argv[0]);
-       exit(0);
+       exit(1);
     }
     portno = atoi(argv[3]);
     clientsockfd = socket(AF_INET, SOCK_STREAM, 0); //create socket
-    if (clientsockfd < 0) 
-        error("ERROR opening socket");
-    
+    if (clientsockfd < 0) {
+        perror("ERROR opening socket");
+        exit(1);
+    }
     server = gethostbyname(hostname); //look up server
     if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host\n");
-        exit(0);
+        perror("ERROR, no such host");
+        exit(1);
     }
     optval = 1;
     setsockopt(clientsockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)); //allow reuse of port
@@ -125,35 +133,36 @@ int main(int argc, char *argv[])
          server->h_length);
     serv_addr.sin_port = htons(portno);
 
-    if (connect(clientsockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) //connect to server socket
-        error("ERROR connecting");
+    if (connect(clientsockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){ //connect to server socket
+        perror("ERROR connecting");
+        exit(1);
+    }
     
     char auth[]="dec_bs";
     write(clientsockfd, auth, sizeof(auth));
     read(clientsockfd, buffer, sizeof(buffer));
     if (strcmp(buffer, "dec_d_bs") != 0) {
-        perror("unable to contact otp_enc_d on given port");
+        fprintf(stderr, "unable to contact otp_enc_d on given port\n");
         exit(2);
     }
     
     //check that key is at least as long as message
     long infilelength = get_file_length(argv[1]);
-    //printf("length of %s is %d\n", argv[1], infilelength);
     long keylength = get_file_length(argv[2]);    
-    //printf("length of %s is %d\n", argv[2], keylength);
     if (infilelength > keylength){
-    	 perror("dec: key is too short");
+    	 fprintf(stderr, "key is too short\n");
     	 exit(1); 
     }
     
 	 //send plaintextfile
-    sendFile(argv[1], clientsockfd);
+    sendFile(argv[1], clientsockfd, infilelength);
     //send key
-	 sendFile(argv[2], clientsockfd);
+	 sendFile(argv[2], clientsockfd, keylength);
 
     n = read(clientsockfd,buffer,sizeof(buffer));
     if (n < 0){
-         error("ERROR reading from socket");
+         perror("ERROR reading from socket");
+         exit(1);
     }
     printf("%s\n",buffer);
     close(clientsockfd);
